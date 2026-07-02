@@ -1,0 +1,402 @@
+-- // 1 (Services) //
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+-- // 2 (Player + state) //
+local lp = Players.LocalPlayer
+local activated = false
+local keybind = Enum.KeyCode.V
+local waitingForKey = false
+local power = 97000
+local lagAmount = 0.12
+local lagConn = nil
+local currentMode = "Normal"          -- "Normal" or "PingLagger"
+local previousPower = power           -- store power when switching to PingLagger
+local autoOn = false                  -- auto ping lagger on steal
+local autoConn = nil                  -- connection for auto monitoring
+local pingCheckConn = nil             -- for warning display
+
+-- // 3 (Map power to lag amount) //
+local function applyPower(val)
+	power = math.clamp(val, 10000, 500000)
+	local t = (power - 10000) / 490000
+	lagAmount = t * 0.2
+end
+
+applyPower(power)
+
+-- // 4 (Start / stop lag) //
+local function startLag()
+	if lagConn then lagConn:Disconnect() end
+
+	lagConn = RunService.RenderStepped:Connect(function()
+		if not activated then return end
+		if lagAmount > 0 then
+			local t = tick()
+			while tick() - t < lagAmount do end
+		end
+	end)
+end
+
+local function stopLag()
+	activated = false
+	if lagConn then lagConn:Disconnect(); lagConn = nil end
+end
+
+-- // 5 (Mode switching) //
+local function setMode(newMode)
+	if currentMode == newMode then return end
+	if newMode == "PingLagger" then
+		-- Save current power if coming from Normal
+		if currentMode == "Normal" then
+			previousPower = power
+		end
+		currentMode = "PingLagger"
+		power = 250000
+		applyPower(power)
+		powerBox.Text = "250k"
+		powerBox.Active = false
+		powerBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+		modeBtn.Text = "Ping Lagger"
+	else -- Normal
+		currentMode = "Normal"
+		power = previousPower
+		applyPower(power)
+		powerBox.Text = tostring(previousPower)
+		powerBox.Active = true
+		powerBox.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+		modeBtn.Text = "Normal"
+	end
+end
+
+local function toggleMode()
+	if autoOn then return end  -- auto overrides manual
+	if currentMode == "Normal" then
+		setMode("PingLagger")
+	else
+		setMode("Normal")
+	end
+end
+
+-- // 6 (Cleanup) //
+if CoreGui:FindFirstChild("VisionSpeedBypass") then
+	CoreGui.VisionSpeedBypass:Destroy()
+end
+
+-- // 7 (ScreenGui) //
+local gui = Instance.new("ScreenGui")
+gui.Name = "VisionSpeedBypass"
+gui.ResetOnSpawn = false
+gui.Parent = CoreGui
+
+-- // 8 (Main frame - taller to fit extra row) //
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 180, 0, 220)
+main.Position = UDim2.new(0.5, -90, 0.5, -110)
+main.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.ClipsDescendants = true
+main.Parent = gui
+
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Thickness = 1.5
+mainStroke.Color = Color3.fromRGB(50, 50, 60)
+mainStroke.Parent = main
+
+-- // 9 (Title) //
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 32)
+title.Position = UDim2.new(0, 0, 0, 5)
+title.BackgroundTransparency = 1
+title.Text = "Vision Speed Bypass"
+title.TextColor3 = Color3.fromRGB(160, 80, 220)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 13
+title.Parent = main
+
+-- // 10 (Enable button) //
+local enableBtn = Instance.new("TextButton")
+enableBtn.Size = UDim2.new(0.9, 0, 0, 34)
+enableBtn.Position = UDim2.new(0.05, 0, 0, 42)
+enableBtn.BackgroundColor3 = Color3.fromRGB(140, 70, 200)
+enableBtn.Text = "Enable"
+enableBtn.TextColor3 = Color3.new(1, 1, 1)
+enableBtn.Font = Enum.Font.GothamBold
+enableBtn.TextSize = 12
+enableBtn.BorderSizePixel = 0
+enableBtn.AutoButtonColor = false
+enableBtn.Parent = main
+
+Instance.new("UICorner", enableBtn).CornerRadius = UDim.new(0, 8)
+
+-- // 11 (Row helper) //
+local function createRow(yPos, labelText)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(0.9, 0, 0, 30)
+	row.Position = UDim2.new(0.05, 0, 0, yPos)
+	row.BackgroundColor3 = Color3.fromRGB(25, 25, 32)
+	row.BorderSizePixel = 0
+	row.Parent = main
+	Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0.5, 0, 1, 0)
+	label.Position = UDim2.new(0, 0, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = labelText
+	label.TextColor3 = Color3.fromRGB(200, 200, 200)
+	label.Font = Enum.Font.GothamMedium
+	label.TextSize = 10
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = row
+
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, 10)
+	pad.Parent = label
+
+	return row, label
+end
+
+-- // 12 (Mode row) //
+local modeRow, modeLabel = createRow(81, "Mode")
+local modeBtn = Instance.new("TextButton")
+modeBtn.Size = UDim2.new(0.4, 0, 0.7, 0)
+modeBtn.Position = UDim2.new(0.55, 0, 0.15, 0)
+modeBtn.BackgroundColor3 = Color3.fromRGB(140, 70, 200)
+modeBtn.Text = "Normal"
+modeBtn.TextColor3 = Color3.new(1, 1, 1)
+modeBtn.Font = Enum.Font.GothamBold
+modeBtn.TextSize = 11
+modeBtn.BorderSizePixel = 0
+modeBtn.AutoButtonColor = false
+modeBtn.Parent = modeRow
+Instance.new("UICorner", modeBtn).CornerRadius = UDim.new(0, 6)
+
+-- // 13 (Power row) //
+local powerRow, powerLabel = createRow(115, "Power")
+local powerBox = Instance.new("TextBox")
+powerBox.Size = UDim2.new(0.4, 0, 0.7, 0)
+powerBox.Position = UDim2.new(0.55, 0, 0.15, 0)
+powerBox.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+powerBox.Text = tostring(power)
+powerBox.TextColor3 = Color3.new(1, 1, 1)
+powerBox.Font = Enum.Font.GothamBold
+powerBox.TextSize = 12
+powerBox.BorderSizePixel = 0
+powerBox.ClearTextOnFocus = false
+powerBox.Parent = powerRow
+Instance.new("UICorner", powerBox).CornerRadius = UDim.new(0, 6)
+
+-- // 14 (Keybind row) //
+local kbRow, kbLabel = createRow(149, "Keybind")
+local kbBtn = Instance.new("TextButton")
+kbBtn.Size = UDim2.new(0.4, 0, 0.7, 0)
+kbBtn.Position = UDim2.new(0.55, 0, 0.15, 0)
+kbBtn.BackgroundColor3 = Color3.fromRGB(140, 70, 200)
+kbBtn.Text = keybind.Name
+kbBtn.TextColor3 = Color3.new(1, 1, 1)
+kbBtn.Font = Enum.Font.GothamBold
+kbBtn.TextSize = 12
+kbBtn.BorderSizePixel = 0
+kbBtn.AutoButtonColor = false
+kbBtn.Parent = kbRow
+Instance.new("UICorner", kbBtn).CornerRadius = UDim.new(0, 6)
+
+-- // 15 (Auto Steal row) //
+local autoRow, autoLabel = createRow(183, "Auto Steal")
+local autoBtn = Instance.new("TextButton")
+autoBtn.Size = UDim2.new(0.4, 0, 0.7, 0)
+autoBtn.Position = UDim2.new(0.55, 0, 0.15, 0)
+autoBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+autoBtn.Text = "Off"
+autoBtn.TextColor3 = Color3.new(1, 1, 1)
+autoBtn.Font = Enum.Font.GothamBold
+autoBtn.TextSize = 12
+autoBtn.BorderSizePixel = 0
+autoBtn.AutoButtonColor = false
+autoBtn.Parent = autoRow
+Instance.new("UICorner", autoBtn).CornerRadius = UDim.new(0, 6)
+
+-- // 16 (Warning label - top of screen) //
+local warning = Instance.new("TextLabel")
+warning.Size = UDim2.new(0, 500, 0, 50)
+warning.Position = UDim2.new(0.5, -250, 0, 10)
+warning.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+warning.BackgroundTransparency = 0.15
+warning.TextColor3 = Color3.new(1, 1, 1)
+warning.Font = Enum.Font.GothamBold
+warning.TextSize = 22
+warning.Text = ""
+warning.Visible = false
+warning.Parent = gui
+Instance.new("UICorner", warning).CornerRadius = UDim.new(0, 10)
+local warnStroke = Instance.new("UIStroke")
+warnStroke.Thickness = 2
+warnStroke.Color = Color3.fromRGB(255, 100, 100)
+warnStroke.Parent = warning
+
+-- // 17 (Event connections) //
+
+-- Mode button
+modeBtn.MouseButton1Click:Connect(toggleMode)
+
+-- Power box
+powerBox.FocusLost:Connect(function()
+	if currentMode == "PingLagger" then
+		powerBox.Text = "250k"
+		return
+	end
+	local val = tonumber(powerBox.Text)
+	if val then
+		applyPower(val)
+		powerBox.Text = tostring(power)
+	else
+		powerBox.Text = tostring(power)
+	end
+end)
+
+-- Keybind setting
+kbBtn.MouseButton1Click:Connect(function()
+	waitingForKey = true
+	kbBtn.Text = "..."
+	kbBtn.BackgroundColor3 = Color3.fromRGB(200, 70, 70)
+end)
+
+-- Manual toggle lag
+local function manualToggle()
+	if autoOn then return end  -- auto mode controls activation
+	if not activated then
+		activated = true
+		enableBtn.Text = "Disable"
+		enableBtn.BackgroundColor3 = Color3.fromRGB(200, 70, 70)
+		startLag()
+	else
+		stopLag()
+		enableBtn.Text = "Enable"
+		enableBtn.BackgroundColor3 = Color3.fromRGB(140, 70, 200)
+	end
+end
+
+enableBtn.MouseButton1Click:Connect(manualToggle)
+
+-- Auto Steal toggle
+local function toggleAuto()
+	autoOn = not autoOn
+	if autoOn then
+		autoBtn.Text = "On"
+		autoBtn.BackgroundColor3 = Color3.fromRGB(70, 200, 70)
+		modeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)  -- disabled look
+		modeBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+		modeBtn.Active = false
+		enableBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+		enableBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+		enableBtn.Active = false
+		-- If currently lag is on, turn it off (auto will control)
+		if activated then stopLag() end
+		-- start auto monitoring
+		if not autoConn then
+			autoConn = RunService.Heartbeat:Connect(function()
+				if not autoOn then return end
+				local char = lp.Character
+				if not char then return end
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if not hum then return end
+				-- Detect stealing: WalkSpeed < 25 (typical carry state)
+				local isStealing = hum.WalkSpeed < 25
+				if isStealing then
+					-- Ensure we are in ping lagger mode and lag is on
+					if currentMode ~= "PingLagger" then
+						setMode("PingLagger")
+					end
+					if not activated then
+						activated = true
+						startLag()
+						enableBtn.Text = "Disable"  -- visual sync
+						enableBtn.BackgroundColor3 = Color3.fromRGB(200, 70, 70)
+					end
+				else
+					-- Not stealing: turn off lag and revert to normal
+					if activated then
+						stopLag()
+						enableBtn.Text = "Enable"
+						enableBtn.BackgroundColor3 = Color3.fromRGB(140, 70, 200)
+					end
+					if currentMode ~= "Normal" then
+						setMode("Normal")
+					end
+				end
+			end)
+		end
+	else
+		autoBtn.Text = "Off"
+		autoBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+		modeBtn.BackgroundColor3 = Color3.fromRGB(140, 70, 200)
+		modeBtn.TextColor3 = Color3.new(1, 1, 1)
+		modeBtn.Active = true
+		enableBtn.BackgroundColor3 = Color3.fromRGB(140, 70, 200)
+		enableBtn.TextColor3 = Color3.new(1, 1, 1)
+		enableBtn.Active = true
+		if autoConn then
+			autoConn:Disconnect()
+			autoConn = nil
+		end
+		-- If lag is still on, turn it off (manual control now)
+		if activated then stopLag(); enableBtn.Text = "Enable"; enableBtn.BackgroundColor3 = Color3.fromRGB(140, 70, 200) end
+	end
+end
+autoBtn.MouseButton1Click:Connect(toggleAuto)
+
+-- Input listener (only for manual toggle if not auto)
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if waitingForKey then
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			keybind = input.KeyCode
+			kbBtn.Text = keybind.Name
+			kbBtn.BackgroundColor3 = Color3.fromRGB(140, 70, 200)
+			waitingForKey = false
+		end
+		return
+	end
+	if input.KeyCode == keybind then
+		manualToggle()  -- uses the same function that respects autoOn
+	end
+end)
+
+-- Ping monitoring for warning
+pingCheckConn = RunService.Heartbeat:Connect(function()
+	if activated and currentMode == "PingLagger" then
+		local ping = lp:GetNetworkPing()  -- in milliseconds
+		if ping > 100 then
+			warning.Visible = true
+			warning.Text = "⚠️High Ping " .. math.floor(ping) .. " Turn Off⚠️"
+		else
+			warning.Visible = false
+		end
+	else
+		warning.Visible = false
+	end
+end)
+
+-- Re-apply on respawn (if manual mode is on, auto will handle itself)
+lp.CharacterAdded:Connect(function()
+	task.wait(1)
+	if not autoOn then
+		-- Only re-apply manual lag if it was on
+		if activated then
+			stopLag()
+			activated = true
+			startLag()
+		end
+	end
+	-- If auto is on, the heartbeat will detect the new character and apply state.
+end)
+
+-- // 18 (End) //
