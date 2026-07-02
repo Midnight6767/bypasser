@@ -1,0 +1,27 @@
+name: Burn After Read
+on:
+  push:
+  schedule:
+    - cron: '*/30 * * * *'  # Runs every 30 minutes
+
+jobs:
+  burn:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Burn the script
+        run: |
+          if [ -f "Bypasser" ]; then
+            FILE_DATE=$(git log -1 --format=%cd --date=unix "Bypasser")
+            CURRENT_DATE=$(date +%s)
+            FILE_AGE=$((CURRENT_DATE - FILE_DATE))
+            
+            # Delete if older than 1 hour (3600 seconds)
+            if [ $FILE_AGE -gt 3600 ]; then
+              git rm Bypasser
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git commit -m "🔥 Burn after read - script destroyed"
+              git push
+            fi
+          fi
