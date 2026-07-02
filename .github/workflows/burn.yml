@@ -16,7 +16,7 @@ jobs:
             CURRENT_DATE=$(date +%s)
             FILE_AGE=$((CURRENT_DATE - FILE_DATE))
             
-            # Delete if older than 1 hour (3600 seconds)
+            # Delete if older than 1 hour (300 seconds)
             if [ $FILE_AGE -gt 3600 ]; then
               git rm Bypasser
               git config user.name "github-actions[bot]"
